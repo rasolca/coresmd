@@ -501,6 +501,7 @@ func Handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		"server_ip":         resp.ServerIPAddr,
 		"giaddr":            giaddr,
 		"router_ips":        fmt.Sprintf("%v", dhcpv4.GetIPs(dhcpv4.OptionRouter, resp.Options)),
+		"dns_ips":           fmt.Sprintf("%v", dhcpv4.GetIPs(dhcpv4.OptionDomainNameServer, resp.Options)),
 		"netmask":           fmt.Sprintf("%v", dhcpv4.GetIP(dhcpv4.OptionSubnetMask, resp.Options)),
 	}).Info("DHCPv4 assignment")
 

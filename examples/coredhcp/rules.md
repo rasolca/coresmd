@@ -52,6 +52,7 @@ match filters.
     - [7. Suppress domain suffix for selected hosts](#7-suppress-domain-suffix-for-selected-hosts)
     - [8. Hostname override with `continue`](#8-hostname-override-with-continue)
     - [9. Familiar "legacy-style" configuration, expressed as rules](#9-familiar-legacy-style-configuration-expressed-as-rules)
+    - [10. Per-subnet DNS servers (DHCP option 6 / DHCPv6 option 23)](#10-per-subnet-dns-servers-dhcp-option-6--dhcpv6-option-23)
   - [Multiple Subnet Support](#multiple-subnet-support)
   - [Caveats](#caveats)
   - [See Also](#see-also)
@@ -117,6 +118,7 @@ A rule may set:
 
 - `hostname` (DHCP option 12)
 - `routers` (DHCPv4 option 3)
+- `dns` (DHCPv4 option 6 / DHCPv6 option 23)
 - `netmask` (DHCPv4 option 1)
 
 ## Migrating from `*_pattern`
@@ -233,7 +235,7 @@ Mutually exclusive with `id`.
 ### Action Keys
 
 Rules may apply one or more actions when matched. At least one action must be
-specified (`hostname`, `routers`, `netmask`, `cidr`, or `ignore`). If no match keys are
+specified (`hostname`, `routers`, `dns`, `netmask`, `cidr`, or `ignore`). If no match keys are
 specified, the action(s) will apply to all incoming DHCP requests.
 
 #### `hostname:PATTERN`
@@ -252,6 +254,18 @@ will override any routers set with the CoreDHCP `netmask` plugin.
 This action applies to DHCPv4 only.
 
 **Default:** omitted (no routers set by this rule)
+
+#### `dns:IP[|IP...]`
+
+Set DNS Recursive Name Server option (RFC 2132 option 6 for DHCPv4, RFC 3646
+option 23 for DHCPv6) for the matched host. Multiple DNS servers may be
+specified using `|`. This action will override any DNS servers set with the
+CoreDHCP `dns` plugin.
+
+For DHCPv4, values must be IPv4 addresses. For DHCPv6, values must be IPv6
+addresses.
+
+**Default:** omitted (no DNS servers set by this rule)
 
 #### `netmask:MASK`
 
@@ -610,6 +624,35 @@ The old `node_pattern`, `bmc_pattern`, `hostname_by_type`, and
 This produces the same administrator-facing naming scheme as the legacy knobs,
 while preserving rule ordering and allowing additional matching criteria.
 
+### 10. Per-subnet DNS servers (DHCP option 6 / DHCPv6 option 23)
+
+Use the `dns:` action to set DNS servers per subnet. This is useful when
+different subnets need to use different DNS resolvers.
+
+```yaml
+- coresmd: |
+    domain=lab.local
+
+    /* Compute subnet uses datacenter DNS */
+    rule=subnet:10.40.1.0/24,type:Node,hostname:compute-{04d},routers:10.40.1.1,dns:10.40.1.10|10.40.1.11
+
+    /* Storage subnet uses a dedicated resolver */
+    rule=subnet:10.40.3.0/24,type:Node,hostname:storage-{04d},routers:10.40.3.1,dns:10.40.3.10
+
+    /* Default BMC naming */
+    rule=type:NodeBMC,hostname:bmc{04d}
+```
+
+For DHCPv6, use IPv6 addresses:
+
+```yaml
+- coresmd: |
+    rule=subnet:2001:db8:1::/64,type:Node,hostname:compute-{04d},dns:2001:db8::53
+```
+
+The `dns:` action overrides any DNS servers configured with the CoreDHCP `dns`
+plugin for matching clients.
+
 ## Multiple Subnet Support
 
 CoreSMD natively supports multi-subnet environments through rules with
@@ -646,7 +689,7 @@ In this configuration:
 
 ## Caveats
 
-- At least one action must be specified: `hostname`, `routers`, `netmask`, or `cidr`.
+- At least one action must be specified: `hostname`, `routers`, `dns`, `netmask`, or `cidr`.
   (Note: `subnet` may implicitly set a netmask when neither `netmask` nor `cidr` is specified.)
 - `type:` is optional, but if present must include at least one type.
 - Only the first assigned IP is used for subnet matching.

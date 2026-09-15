@@ -27,6 +27,7 @@ const DefaultPattern = "unknown-{04d}"
 var AllowedKeys = []string{
 	"cidr",
 	"continue",
+	"dns",
 	"domain",
 	"domain_append",
 	"hostname",
@@ -184,6 +185,7 @@ type Action struct {
 	DomainAppend string     // controls when/how to append domain to hostname (rule vs. global vs. both)
 	Netmask      net.IPMask // rule-specific network mask for IPv4
 	Routers      []net.IP   // router IPs for selected component(s)
+	DNS          []net.IP   // DNS server IPs for selected component(s)
 	Continue     bool       // whether to continue parsing subsequent rules if this matches
 	Ignore       bool       // if true, drop DHCP request without responding (takes precedence over all other actions)
 }
@@ -218,6 +220,14 @@ func (a Action) String() string {
 			parts = append(parts, r.String())
 		}
 		actionStr += fmt.Sprintf(",routers:%s", strings.Join(parts, "|"))
+	}
+
+	if len(a.DNS) > 0 {
+		parts := make([]string, 0, len(a.DNS))
+		for _, d := range a.DNS {
+			parts = append(parts, d.String())
+		}
+		actionStr += fmt.Sprintf(",dns:%s", strings.Join(parts, "|"))
 	}
 
 	return strings.TrimLeft(actionStr, ",")
@@ -288,6 +298,17 @@ func ParseRule(rule string) (Rule, error) {
 				return Rule{}, NewErrInvalidValue("routers", r, "valid IPv4 address")
 			}
 			a.Routers = append(a.Routers, ip4)
+		}
+	}
+
+	// dns (action)
+	if dnsStr, ok := comps["dns"]; ok && dnsStr != "" {
+		for _, d := range strings.Split(dnsStr, "|") {
+			ip := net.ParseIP(strings.TrimSpace(d))
+			if ip == nil {
+				return Rule{}, NewErrInvalidValue("dns", d, "valid IP address")
+			}
+			a.DNS = append(a.DNS, ip)
 		}
 	}
 
@@ -448,9 +469,10 @@ func ParseRule(rule string) (Rule, error) {
 	// The ignore action is also valid as a standalone action.
 	if strings.TrimSpace(a.Hostname) == "" &&
 		len(a.Routers) == 0 &&
+		len(a.DNS) == 0 &&
 		!a.Ignore {
 		if ones, size := a.Netmask.Size(); ones == 0 || size == 0 {
-			return Rule{}, NewErrRequiredKeys("hostname", "routers", "netmask", "ignore")
+			return Rule{}, NewErrRequiredKeys("hostname", "routers", "dns", "netmask", "ignore")
 		}
 	}
 
@@ -680,6 +702,11 @@ func Evaluate4(logger *logrus.Entry, ii iface.IfaceInfo, globalDomain, ruleLog s
 				resp.Options.Update(dhcpv4.OptRouter(rule.Action.Routers...))
 			}
 
+			// Set DNS servers (DHCP option 6)
+			if len(rule.Action.DNS) > 0 {
+				resp.Options.Update(dhcpv4.OptDNS(rule.Action.DNS...))
+			}
+
 			// Set netmask (DHCP option 1)
 			//
 			// If the rule did not explicitly set a netmask/cidr action but the rule
@@ -835,6 +862,11 @@ func Evaluate6(logger *logrus.Entry, ii iface.IfaceInfo, globalDomain, ruleLog s
 				hname := lookupHostname(hn, globalDomain, ii, rule)
 				labels := &rfc1035label.Labels{Labels: strings.Split(hname, ".")}
 				resp.UpdateOption(&dhcpv6.OptFQDN{Flags: 0, DomainName: labels})
+			}
+
+			// Set DNS servers (DHCPv6 option 23)
+			if len(rule.Action.DNS) > 0 {
+				resp.UpdateOption(dhcpv6.OptDNS(rule.Action.DNS...))
 			}
 
 			if !cont {

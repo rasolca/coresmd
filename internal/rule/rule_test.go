@@ -7,6 +7,7 @@ package rule
 import (
 	"bytes"
 	"net"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -82,6 +83,7 @@ func TestParseRule_Table(t *testing.T) {
 		{"domain_none_removed", "hostname:x,domain:none", true},
 		{"subnet_invalid", "hostname:x,subnet:notacidr", true},
 		{"id_and_idset_mutual_exclusion", "hostname:x,id:a,id_set:b", true},
+		{"dns_bad_ip", "hostname:x,dns:not_an_ip", true},
 		{"ok_minimal", "hostname:nid{04d}", false},
 		{"ok_multi", "name:r1,log:debug,hostname:x,continue:yes,domain_append:global|rule,type:Node| NodeBMC ,subnet:172.16.0.0/24|172.16.1.0/24", false},
 		{"ok_domain_append_rule_global", "hostname:x,domain:override.local,domain_append:rule|global", false},
@@ -255,6 +257,61 @@ func TestEvaluate6_HostnameAndDefault(t *testing.T) {
 }
 
 // TestParseRule_Ignore tests parsing of the ignore action
+func TestEvaluate4_DNS(t *testing.T) {
+	ii := iface.IfaceInfo{CompID: "x1000s0c0b0n0", CompNID: 7, Type: "Node", MAC: "aa", IPList: []net.IP{net.ParseIP("172.16.0.10")}}
+
+	resp, err := dhcpv4.New()
+	if err != nil {
+		t.Fatalf("unexpected error creating dhcpv4 message: %v", err)
+	}
+	rules := []Rule{{
+		Name:   "node",
+		Match:  Match{Types: map[string]bool{"Node": true}},
+		Action: Action{Hostname: "nid{04d}", DNS: []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8")}},
+	}}
+	Evaluate4(nil, ii, "cluster.local", "none", resp, rules)
+
+	got := dhcpv4.GetIPs(dhcpv4.OptionDomainNameServer, resp.Options)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 DNS servers got=%d", len(got))
+	}
+	if got[0].String() != "1.1.1.1" || got[1].String() != "8.8.8.8" {
+		t.Fatalf("expected DNS servers 1.1.1.1,8.8.8.8 got=%v", got)
+	}
+}
+
+func TestEvaluate6_DNS(t *testing.T) {
+	ii := iface.IfaceInfo{CompID: "x1000s0c0b0n0", CompNID: 7, Type: "Node", MAC: "aa", IPList: []net.IP{net.ParseIP("2001:db8::1")}}
+
+	resp, err := dhcpv6.NewMessage()
+	if err != nil {
+		t.Fatalf("unexpected error creating dhcpv6 message: %v", err)
+	}
+	rules := []Rule{{
+		Name:   "node",
+		Match:  Match{Types: map[string]bool{"Node": true}},
+		Action: Action{Hostname: "nid{04d}", DNS: []net.IP{net.ParseIP("2001:db8::53"), net.ParseIP("2001:db8::54")}},
+	}}
+	Evaluate6(nil, ii, "cluster.local", "none", resp, rules)
+
+	opt := resp.GetOneOption(dhcpv6.OptionDNSRecursiveNameServer)
+	if opt == nil {
+		t.Fatalf("expected DNS option to be set got=nil")
+	}
+	// optDNS is unexported; use reflection to read its exported NameServers field.
+	v := reflect.ValueOf(opt).Elem().FieldByName("NameServers")
+	if !v.IsValid() {
+		t.Fatalf("expected option to have NameServers field")
+	}
+	servers := v.Interface().([]net.IP)
+	if len(servers) != 2 {
+		t.Fatalf("expected 2 DNS servers got=%d", len(servers))
+	}
+	if servers[0].String() != "2001:db8::53" || servers[1].String() != "2001:db8::54" {
+		t.Fatalf("expected DNS servers 2001:db8::53,2001:db8::54 got=%v", servers)
+	}
+}
+
 func TestParseRule_Ignore(t *testing.T) {
 	tests := []struct {
 		name       string

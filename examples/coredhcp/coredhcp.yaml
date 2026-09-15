@@ -163,6 +163,7 @@ server4:
     #   Action keys:
     #   - hostname:PATTERN - Set hostname (supports {04d}, {id} placeholders)
     #   - routers:IP[|IP...] - Set DHCPv4 router option
+    #   - dns:IP[|IP...] - Set DHCP DNS server option (v4 option 6 / v6 option 23)
     #   - netmask:MASK or cidr:BITS - Set DHCPv4 subnet mask
     #   - ignore:{true|false} - Drop DHCP request without responding (takes precedence)
     #   - continue:{true|false} - Continue evaluating subsequent rules after match
@@ -241,8 +242,8 @@ server4:
     #     domain=openchami.cluster
     #     rule_log=info
     #     /* Per-subnet rules: subnet: enables giaddr-aware IP filtering */
-    #     rule=subnet:10.40.1.0/24,type:Node,hostname:compute-{04d},routers:10.40.1.1,cidr:24
-    #     rule=subnet:10.40.3.0/24,type:Node,hostname:storage-{04d},routers:10.40.3.1,cidr:24
+    #     rule=subnet:10.40.1.0/24,type:Node,hostname:compute-{04d},routers:10.40.1.1,dns:10.40.1.10|10.40.1.11,cidr:24
+    #     rule=subnet:10.40.3.0/24,type:Node,hostname:storage-{04d},routers:10.40.3.1,dns:10.40.3.10,cidr:24
     #     rule=type:NodeBMC,hostname:bmc{04d}
     #     rule=hostname:unknown-{04d}
 
