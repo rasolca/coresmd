@@ -53,6 +53,7 @@ match filters.
     - [8. Hostname override with `continue`](#8-hostname-override-with-continue)
     - [9. Familiar "legacy-style" configuration, expressed as rules](#9-familiar-legacy-style-configuration-expressed-as-rules)
     - [10. Per-subnet DNS servers (DHCP option 6 / DHCPv6 option 23)](#10-per-subnet-dns-servers-dhcp-option-6--dhcpv6-option-23)
+    - [11. Per-subnet NTP servers (DHCP option 42 / DHCPv6 option 56)](#11-per-subnet-ntp-servers-dhcp-option-42--dhcpv6-option-56)
   - [Multiple Subnet Support](#multiple-subnet-support)
   - [Caveats](#caveats)
   - [See Also](#see-also)
@@ -119,6 +120,7 @@ A rule may set:
 - `hostname` (DHCP option 12)
 - `routers` (DHCPv4 option 3)
 - `dns` (DHCPv4 option 6 / DHCPv6 option 23)
+- `ntp` (DHCPv4 option 42 / DHCPv6 option 56)
 - `netmask` (DHCPv4 option 1)
 
 ## Migrating from `*_pattern`
@@ -235,7 +237,7 @@ Mutually exclusive with `id`.
 ### Action Keys
 
 Rules may apply one or more actions when matched. At least one action must be
-specified (`hostname`, `routers`, `dns`, `netmask`, `cidr`, or `ignore`). If no match keys are
+specified (`hostname`, `routers`, `dns`, `ntp`, `netmask`, `cidr`, or `ignore`). If no match keys are
 specified, the action(s) will apply to all incoming DHCP requests.
 
 #### `hostname:PATTERN`
@@ -266,6 +268,17 @@ For DHCPv4, values must be IPv4 addresses. For DHCPv6, values must be IPv6
 addresses.
 
 **Default:** omitted (no DNS servers set by this rule)
+
+#### `ntp:IP[|IP...]`
+
+Set NTP Server option (RFC 2132 option 42 for DHCPv4, RFC 5908 option 56 for
+DHCPv6) for the matched host. Multiple NTP servers may be specified using `|`.
+This action will override any NTP servers set with a CoreDHCP NTP plugin.
+
+For DHCPv4, values must be IPv4 addresses. For DHCPv6, values must be IPv6
+addresses.
+
+**Default:** omitted (no NTP servers set by this rule)
 
 #### `netmask:MASK`
 
@@ -653,6 +666,34 @@ For DHCPv6, use IPv6 addresses:
 The `dns:` action overrides any DNS servers configured with the CoreDHCP `dns`
 plugin for matching clients.
 
+### 11. Per-subnet NTP servers (DHCP option 42 / DHCPv6 option 56)
+
+Use the `ntp:` action to set NTP servers per subnet.
+
+```yaml
+- coresmd: |
+    domain=lab.local
+
+    /* Compute subnet uses datacenter NTP */
+    rule=subnet:10.40.1.0/24,type:Node,hostname:compute-{04d},routers:10.40.1.1,dns:10.40.1.10,ntp:10.40.1.20|10.40.1.21
+
+    /* Storage subnet uses a dedicated NTP source */
+    rule=subnet:10.40.3.0/24,type:Node,hostname:storage-{04d},routers:10.40.3.1,dns:10.40.3.10,ntp:10.40.3.20
+
+    /* Default BMC naming */
+    rule=type:NodeBMC,hostname:bmc{04d}
+```
+
+For DHCPv6, use IPv6 addresses:
+
+```yaml
+- coresmd: |
+    rule=subnet:2001:db8:1::/64,type:Node,hostname:compute-{04d},ntp:2001:db8::20
+```
+
+The `ntp:` action overrides any NTP servers configured with a CoreDHCP NTP
+plugin for matching clients.
+
 ## Multiple Subnet Support
 
 CoreSMD natively supports multi-subnet environments through rules with
@@ -689,7 +730,7 @@ In this configuration:
 
 ## Caveats
 
-- At least one action must be specified: `hostname`, `routers`, `dns`, `netmask`, or `cidr`.
+- At least one action must be specified: `hostname`, `routers`, `dns`, `ntp`, `netmask`, or `cidr`.
   (Note: `subnet` may implicitly set a netmask when neither `netmask` nor `cidr` is specified.)
 - `type:` is optional, but if present must include at least one type.
 - Only the first assigned IP is used for subnet matching.

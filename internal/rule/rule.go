@@ -37,6 +37,7 @@ var AllowedKeys = []string{
 	"log",
 	"name",
 	"netmask",
+	"ntp",
 	"routers",
 	"subnet",
 	"type",
@@ -186,6 +187,7 @@ type Action struct {
 	Netmask      net.IPMask // rule-specific network mask for IPv4
 	Routers      []net.IP   // router IPs for selected component(s)
 	DNS          []net.IP   // DNS server IPs for selected component(s)
+	NTP          []net.IP   // NTP server IPs for selected component(s)
 	Continue     bool       // whether to continue parsing subsequent rules if this matches
 	Ignore       bool       // if true, drop DHCP request without responding (takes precedence over all other actions)
 }
@@ -228,6 +230,14 @@ func (a Action) String() string {
 			parts = append(parts, d.String())
 		}
 		actionStr += fmt.Sprintf(",dns:%s", strings.Join(parts, "|"))
+	}
+
+	if len(a.NTP) > 0 {
+		parts := make([]string, 0, len(a.NTP))
+		for _, n := range a.NTP {
+			parts = append(parts, n.String())
+		}
+		actionStr += fmt.Sprintf(",ntp:%s", strings.Join(parts, "|"))
 	}
 
 	return strings.TrimLeft(actionStr, ",")
@@ -309,6 +319,17 @@ func ParseRule(rule string) (Rule, error) {
 				return Rule{}, NewErrInvalidValue("dns", d, "valid IP address")
 			}
 			a.DNS = append(a.DNS, ip)
+		}
+	}
+
+	// ntp (action)
+	if ntpStr, ok := comps["ntp"]; ok && ntpStr != "" {
+		for _, n := range strings.Split(ntpStr, "|") {
+			ip := net.ParseIP(strings.TrimSpace(n))
+			if ip == nil {
+				return Rule{}, NewErrInvalidValue("ntp", n, "valid IP address")
+			}
+			a.NTP = append(a.NTP, ip)
 		}
 	}
 
@@ -470,9 +491,10 @@ func ParseRule(rule string) (Rule, error) {
 	if strings.TrimSpace(a.Hostname) == "" &&
 		len(a.Routers) == 0 &&
 		len(a.DNS) == 0 &&
+		len(a.NTP) == 0 &&
 		!a.Ignore {
 		if ones, size := a.Netmask.Size(); ones == 0 || size == 0 {
-			return Rule{}, NewErrRequiredKeys("hostname", "routers", "dns", "netmask", "ignore")
+			return Rule{}, NewErrRequiredKeys("hostname", "routers", "dns", "ntp", "netmask", "ignore")
 		}
 	}
 
@@ -707,6 +729,11 @@ func Evaluate4(logger *logrus.Entry, ii iface.IfaceInfo, globalDomain, ruleLog s
 				resp.Options.Update(dhcpv4.OptDNS(rule.Action.DNS...))
 			}
 
+			// Set NTP servers (DHCP option 42)
+			if len(rule.Action.NTP) > 0 {
+				resp.Options.Update(dhcpv4.OptNTPServers(rule.Action.NTP...))
+			}
+
 			// Set netmask (DHCP option 1)
 			//
 			// If the rule did not explicitly set a netmask/cidr action but the rule
@@ -867,6 +894,16 @@ func Evaluate6(logger *logrus.Entry, ii iface.IfaceInfo, globalDomain, ruleLog s
 			// Set DNS servers (DHCPv6 option 23)
 			if len(rule.Action.DNS) > 0 {
 				resp.UpdateOption(dhcpv6.OptDNS(rule.Action.DNS...))
+			}
+
+			// Set NTP servers (DHCPv6 option 56)
+			if len(rule.Action.NTP) > 0 {
+				ntpOpt := &dhcpv6.OptNTPServer{}
+				for _, ip := range rule.Action.NTP {
+					so := dhcpv6.NTPSuboptionSrvAddr(ip)
+					ntpOpt.Suboptions = append(ntpOpt.Suboptions, &so)
+				}
+				resp.UpdateOption(ntpOpt)
 			}
 
 			if !cont {
