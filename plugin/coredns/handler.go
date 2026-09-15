@@ -236,7 +236,7 @@ func (p *Plugin) lookupA(name string) net.IP {
 		}
 		if strings.HasSuffix(name, zone.Name) {
 			for _, ei := range p.cache.EthernetInterfaces {
-				if comp, ok := p.cache.Components[ei.ComponentID]; ok && comp.Type == "NodeBMC" {
+				if comp, ok := p.cache.Components[ei.ComponentID]; ok && zone.AllowsBMCType(comp.Type) {
 					xnameHost := comp.ID
 					xnameFQDN := xnameHost + "." + zone.Name
 					if name == xnameFQDN {
@@ -287,7 +287,7 @@ func (p *Plugin) lookupAAAA(name string) net.IP {
 		}
 		if strings.HasSuffix(name, zone.Name) {
 			for _, ei := range p.cache.EthernetInterfaces {
-				if comp, ok := p.cache.Components[ei.ComponentID]; ok && comp.Type == "NodeBMC" {
+				if comp, ok := p.cache.Components[ei.ComponentID]; ok && zone.AllowsBMCType(comp.Type) {
 					xnameHost := comp.ID
 					xnameFQDN := xnameHost + "." + zone.Name
 					if name == xnameFQDN {
@@ -325,7 +325,7 @@ func (p *Plugin) lookupPTR(name string) string {
 							if comp.Type == "Node" && zone.NodePattern != "" {
 								return comp.ID + "." + zone.Name
 							}
-							if comp.Type == "NodeBMC" {
+							if zone.AllowsBMCType(comp.Type) {
 								return comp.ID + "." + zone.Name
 							}
 						}

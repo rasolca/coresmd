@@ -13,6 +13,23 @@ type Zone struct {
 	NodePattern string   // Pattern for node records (e.g., "nid{04d}.cluster.local")
 	NS          []string // Optional: nameservers for SOA/NS in zone transfers
 	Mailbox     string   // Optional: SOA RNAME (hostmaster address as a DNS name)
+	BMCTypes    []string // BMC component types to include in DNS (default: ["NodeBMC"])
+}
+
+// AllowsBMCType reports whether a component type should be included in DNS for
+// this zone. When no BMC types are configured, NodeBMC is accepted for backward
+// compatibility.
+func (z Zone) AllowsBMCType(compType string) bool {
+	types := z.BMCTypes
+	if len(types) == 0 {
+		types = []string{"NodeBMC"}
+	}
+	for _, t := range types {
+		if t == compType {
+			return true
+		}
+	}
+	return false
 }
 
 // ZoneManager handles zone operations and record lookups

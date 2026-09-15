@@ -1007,6 +1007,77 @@ func TestServeDNS_AAAA_Record_Node(t *testing.T) {
 	}
 }
 
+// createTestPluginWithBMCTypes returns a plugin configured with the given
+// BMC types for its zone.
+func createTestPluginWithBMCTypes(bmcTypes []string) *Plugin {
+	cache := &cache.Cache{
+		Duration:    1 * time.Minute,
+		Client:      &smdclient.SmdClient{},
+		LastUpdated: time.Now(),
+		Mutex:       sync.RWMutex{},
+		EthernetInterfaces: map[string]smdclient.EthernetInterface{
+			"aa:bb:cc:dd:ee:ff": {
+				MACAddress:  "aa:bb:cc:dd:ee:ff",
+				ComponentID: "bmc001",
+				Type:        "NodeBMC",
+				Description: "Test NodeBMC Interface",
+				IPAddresses: []smdclient.IPAddress{
+					{IPAddress: "192.168.1.100"},
+					{IPAddress: "2001:db8::100"},
+				},
+			},
+			"11:22:33:44:55:66": {
+				MACAddress:  "11:22:33:44:55:66",
+				ComponentID: "routerbmc001",
+				Type:        "RouterBMC",
+				Description: "Test RouterBMC Interface",
+				IPAddresses: []smdclient.IPAddress{
+					{IPAddress: "192.168.1.101"},
+					{IPAddress: "2001:db8::101"},
+				},
+			},
+			"22:33:44:55:66:77": {
+				MACAddress:  "22:33:44:55:66:77",
+				ComponentID: "chassisbmc001",
+				Type:        "ChassisBMC",
+				Description: "Test ChassisBMC Interface",
+				IPAddresses: []smdclient.IPAddress{
+					{IPAddress: "192.168.1.102"},
+					{IPAddress: "2001:db8::102"},
+				},
+			},
+		},
+		Components: map[string]smdclient.Component{
+			"bmc001": {
+				ID:   "bmc001",
+				NID:  0,
+				Type: "NodeBMC",
+			},
+			"routerbmc001": {
+				ID:   "routerbmc001",
+				NID:  0,
+				Type: "RouterBMC",
+			},
+			"chassisbmc001": {
+				ID:   "chassisbmc001",
+				NID:  0,
+				Type: "ChassisBMC",
+			},
+		},
+	}
+
+	return &Plugin{
+		zones: []Zone{
+			{
+				Name:        "cluster.local",
+				NodePattern: "nid{04d}",
+				BMCTypes:    bmcTypes,
+			},
+		},
+		cache: cache,
+	}
+}
+
 // TestServeDNS_AAAA_Record_BMC tests AAAA record lookup for a BMC
 func TestServeDNS_AAAA_Record_BMC(t *testing.T) {
 	p := createTestPluginWithIPv6()
@@ -1189,6 +1260,125 @@ func TestServeDNS_PTR_Record_IPv6(t *testing.T) {
 		t.Fatal("Answer is not a PTR record")
 	}
 
+	if mock.called {
+		t.Error("Expected next plugin not to be called")
+	}
+}
+
+// TestServeDNS_A_Record_RouterBMC tests A record lookup for RouterBMC when configured
+func TestServeDNS_A_Record_RouterBMC(t *testing.T) {
+	p := createTestPluginWithBMCTypes([]string{"NodeBMC", "RouterBMC", "ChassisBMC"})
+	mock := &mockHandler{}
+	p.Next = mock
+
+	req := new(dns.Msg)
+	req.SetQuestion("routerbmc001.cluster.local.", dns.TypeA)
+
+	w := &mockResponseWriter{}
+
+	rcode, err := p.ServeDNS(context.Background(), w, req)
+	if err != nil {
+		t.Fatalf("ServeDNS failed: %v", err)
+	}
+	if rcode != dns.RcodeSuccess {
+		t.Errorf("Expected rcode %d, got %d", dns.RcodeSuccess, rcode)
+	}
+	if len(w.msg.Answer) != 1 {
+		t.Fatalf("Expected 1 answer, got %d", len(w.msg.Answer))
+	}
+	if a, ok := w.msg.Answer[0].(*dns.A); ok {
+		if !a.A.Equal(net.ParseIP("192.168.1.101")) {
+			t.Errorf("Expected IP 192.168.1.101, got %v", a.A)
+		}
+	} else {
+		t.Fatal("Answer is not an A record")
+	}
+	if mock.called {
+		t.Error("Expected next plugin not to be called")
+	}
+}
+
+// TestServeDNS_A_Record_ChassisBMC tests A record lookup for ChassisBMC when configured
+func TestServeDNS_A_Record_ChassisBMC(t *testing.T) {
+	p := createTestPluginWithBMCTypes([]string{"NodeBMC", "RouterBMC", "ChassisBMC"})
+	mock := &mockHandler{}
+	p.Next = mock
+
+	req := new(dns.Msg)
+	req.SetQuestion("chassisbmc001.cluster.local.", dns.TypeA)
+
+	w := &mockResponseWriter{}
+
+	rcode, err := p.ServeDNS(context.Background(), w, req)
+	if err != nil {
+		t.Fatalf("ServeDNS failed: %v", err)
+	}
+	if rcode != dns.RcodeSuccess {
+		t.Errorf("Expected rcode %d, got %d", dns.RcodeSuccess, rcode)
+	}
+	if len(w.msg.Answer) != 1 {
+		t.Fatalf("Expected 1 answer, got %d", len(w.msg.Answer))
+	}
+	if a, ok := w.msg.Answer[0].(*dns.A); ok {
+		if !a.A.Equal(net.ParseIP("192.168.1.102")) {
+			t.Errorf("Expected IP 192.168.1.102, got %v", a.A)
+		}
+	} else {
+		t.Fatal("Answer is not an A record")
+	}
+	if mock.called {
+		t.Error("Expected next plugin not to be called")
+	}
+}
+
+// TestServeDNS_A_Record_RouterBMC_NotConfigured tests RouterBMC is excluded by default
+func TestServeDNS_A_Record_RouterBMC_NotConfigured(t *testing.T) {
+	p := createTestPluginWithBMCTypes(nil) // defaults to NodeBMC only
+	mock := &mockHandler{}
+	p.Next = mock
+
+	req := new(dns.Msg)
+	req.SetQuestion("routerbmc001.cluster.local.", dns.TypeA)
+
+	w := &mockResponseWriter{}
+
+	_, err := p.ServeDNS(context.Background(), w, req)
+	if err != nil {
+		t.Fatalf("ServeDNS failed: %v", err)
+	}
+	if !mock.called {
+		t.Error("Expected next plugin to be called for unconfigured RouterBMC")
+	}
+}
+
+// TestServeDNS_PTR_Record_RouterBMC tests reverse lookup for RouterBMC when configured
+func TestServeDNS_PTR_Record_RouterBMC(t *testing.T) {
+	p := createTestPluginWithBMCTypes([]string{"NodeBMC", "RouterBMC", "ChassisBMC"})
+	mock := &mockHandler{}
+	p.Next = mock
+
+	req := new(dns.Msg)
+	req.SetQuestion("101.1.168.192.in-addr.arpa.", dns.TypePTR)
+
+	w := &mockResponseWriter{}
+
+	rcode, err := p.ServeDNS(context.Background(), w, req)
+	if err != nil {
+		t.Fatalf("ServeDNS failed: %v", err)
+	}
+	if rcode != dns.RcodeSuccess {
+		t.Errorf("Expected rcode %d, got %d", dns.RcodeSuccess, rcode)
+	}
+	if len(w.msg.Answer) != 1 {
+		t.Fatalf("Expected 1 answer, got %d", len(w.msg.Answer))
+	}
+	if ptr, ok := w.msg.Answer[0].(*dns.PTR); ok {
+		if ptr.Ptr != "routerbmc001.cluster.local." {
+			t.Errorf("Expected PTR routerbmc001.cluster.local., got %s", ptr.Ptr)
+		}
+	} else {
+		t.Fatal("Answer is not a PTR record")
+	}
 	if mock.called {
 		t.Error("Expected next plugin not to be called")
 	}

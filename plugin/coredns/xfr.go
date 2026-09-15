@@ -141,7 +141,7 @@ func (p Plugin) nsRecords(z *Zone) []dns.RR {
 // zoneRecords builds the full A/AAAA record set for one zone from the SMD
 // cache, using the same naming rules as lookupA/lookupAAAA:
 //   - Node:    <nid-pattern>.<zone> and <xname>.<zone>
-//   - NodeBMC: <xname>.<zone>
+//   - BMC:     <xname>.<zone> for types configured via bmc_types
 //
 // The result is sorted so the output (and its hash) is deterministic.
 func (p Plugin) zoneRecords(z *Zone) []dns.RR {
@@ -180,13 +180,13 @@ func (p Plugin) zoneRecords(z *Zone) []dns.RR {
 			continue
 		}
 		var names []string
-		switch comp.Type {
-		case "Node":
+		switch {
+		case comp.Type == "Node":
 			names = append(names, comp.ID+"."+z.Name)
 			if z.NodePattern != "" {
 				names = append(names, expandPattern(z.NodePattern, comp.NID, comp.ID)+"."+z.Name)
 			}
-		case "NodeBMC":
+		case z.AllowsBMCType(comp.Type):
 			names = append(names, comp.ID+"."+z.Name)
 		default:
 			continue

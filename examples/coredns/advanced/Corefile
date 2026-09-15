@@ -10,6 +10,7 @@
 # - TLS certificate validation for secure SMD communication
 # - Multiple zone configurations for different domains
 # - Custom hostname patterns for different component types
+# - Configurable BMC component types in DNS (NodeBMC, RouterBMC, ChassisBMC)
 # - Extended cache duration for production environments
 
 # Main DNS server block - listens on default port 53
@@ -31,6 +32,10 @@
         zone cluster.local {
             # Pattern for compute node hostnames: nid0001, nid0002, etc.
             nodes nid{04d}
+
+            # Include NodeBMC, RouterBMC, and ChassisBMC xnames in DNS.
+            # The default is NodeBMC only.
+            bmc_types NodeBMC RouterBMC ChassisBMC
         }
 
         # Secondary zone configuration for management network

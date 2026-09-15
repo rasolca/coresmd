@@ -18,12 +18,17 @@ import (
 )
 
 func createXFRTestPlugin() *Plugin {
+	return createXFRTestPluginWithBMCTypes(nil)
+}
+
+func createXFRTestPluginWithBMCTypes(bmcTypes []string) *Plugin {
 	return &Plugin{
 		xfr: &xfrState{},
 		zones: []Zone{
 			{
 				Name:        "cluster.local",
 				NodePattern: "nid{04d}",
+				BMCTypes:    bmcTypes,
 			},
 			{
 				Name: "bmc.cluster.local",
@@ -55,6 +60,24 @@ func createXFRTestPlugin() *Plugin {
 						{IPAddress: "192.168.1.100"},
 					},
 				},
+				"11:22:33:44:55:66": {
+					MACAddress:  "11:22:33:44:55:66",
+					ComponentID: "routerbmc001",
+					Type:        "RouterBMC",
+					Description: "Test RouterBMC Interface",
+					IPAddresses: []smdclient.IPAddress{
+						{IPAddress: "192.168.1.101"},
+					},
+				},
+				"22:33:44:55:66:77": {
+					MACAddress:  "22:33:44:55:66:77",
+					ComponentID: "chassisbmc001",
+					Type:        "ChassisBMC",
+					Description: "Test ChassisBMC Interface",
+					IPAddresses: []smdclient.IPAddress{
+						{IPAddress: "192.168.1.102"},
+					},
+				},
 				"00:00:00:00:00:00": {
 					MACAddress:  "00:00:00:00:00:00",
 					ComponentID: "unknown001",
@@ -84,6 +107,16 @@ func createXFRTestPlugin() *Plugin {
 					ID:   "bmc001",
 					NID:  0,
 					Type: "NodeBMC",
+				},
+				"routerbmc001": {
+					ID:   "routerbmc001",
+					NID:  0,
+					Type: "RouterBMC",
+				},
+				"chassisbmc001": {
+					ID:   "chassisbmc001",
+					NID:  0,
+					Type: "ChassisBMC",
 				},
 				"unknown001": {
 					ID:   "unknown001",
@@ -415,6 +448,67 @@ func TestZoneHash(t *testing.T) {
 	h3 := p.zoneHash()
 	if h1 == h3 {
 		t.Fatal("zone hash should change when records change")
+	}
+}
+
+func TestZoneRecordsBMCTypes(t *testing.T) {
+	tests := []struct {
+		name      string
+		bmcTypes  []string
+		wantNames map[string]bool // expected A/AAAA owner names
+	}{
+		{
+			name:     "default only includes NodeBMC",
+			bmcTypes: nil,
+			wantNames: map[string]bool{
+				"node001.cluster.local.": true,
+				"nid0001.cluster.local.": true,
+				"bmc001.cluster.local.":  true,
+			},
+		},
+		{
+			name:     "all BMC types included",
+			bmcTypes: []string{"NodeBMC", "RouterBMC", "ChassisBMC"},
+			wantNames: map[string]bool{
+				"node001.cluster.local.":       true,
+				"nid0001.cluster.local.":       true,
+				"bmc001.cluster.local.":        true,
+				"routerbmc001.cluster.local.":  true,
+				"chassisbmc001.cluster.local.": true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := createXFRTestPluginWithBMCTypes(tt.bmcTypes)
+			rrs := p.zoneRecords(&p.zones[0])
+			gotNames := make(map[string]bool)
+			for _, rr := range rrs {
+				switch r := rr.(type) {
+				case *dns.A:
+					gotNames[r.Hdr.Name] = true
+				case *dns.AAAA:
+					gotNames[r.Hdr.Name] = true
+				default:
+					t.Fatalf("unexpected RR type: %T", rr)
+				}
+			}
+			for name := range tt.wantNames {
+				if !gotNames[name] {
+					t.Errorf("expected record for %s not found", name)
+				}
+			}
+			// Ensure RouterBMC/ChassisBMC are absent when not configured.
+			if tt.bmcTypes == nil {
+				if gotNames["routerbmc001.cluster.local."] {
+					t.Error("unexpected RouterBMC record with default BMC types")
+				}
+				if gotNames["chassisbmc001.cluster.local."] {
+					t.Error("unexpected ChassisBMC record with default BMC types")
+				}
+			}
+		})
 	}
 }
 

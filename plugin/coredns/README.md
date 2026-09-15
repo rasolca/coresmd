@@ -71,9 +71,21 @@ The CoreSMD CoreDNS plugin is included in the CoreSMD binary. No additional inst
 
 Each zone block supports the following options:
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `nodes` | string | Node hostname pattern (e.g., "nid{04d}") |
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `nodes` | string | - | Node hostname pattern (e.g., "nid{04d}") |
+| `bmc_types` | list | `NodeBMC` | SMD BMC component types to include in DNS for this zone |
+
+The `bmc_types` directive controls which SMD BMC component types are published
+as DNS records for the zone. By default only `NodeBMC` is included. To also
+resolve `RouterBMC` and/or `ChassisBMC` xnames, add them explicitly:
+
+```corefile
+zone cluster.local {
+    nodes nid{04d}
+    bmc_types NodeBMC RouterBMC ChassisBMC
+}
+```
 
 ## DNS Record Types
 

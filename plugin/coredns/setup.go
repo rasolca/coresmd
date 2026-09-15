@@ -225,6 +225,16 @@ func parseZone(c *caddy.Controller, zoneName string) (Zone, error) {
 				return zone, c.ArgErr()
 			}
 			zone.Mailbox = c.Val()
+		case "bmc_types":
+			// One or more SMD BMC component types to include in DNS for this
+			// zone. Defaults to NodeBMC when omitted.
+			if !c.NextArg() {
+				return zone, c.ArgErr()
+			}
+			zone.BMCTypes = append(zone.BMCTypes, c.Val())
+			for c.NextArg() {
+				zone.BMCTypes = append(zone.BMCTypes, c.Val())
+			}
 		default:
 			return zone, c.Errf("unknown zone directive '%s'", directive)
 		}

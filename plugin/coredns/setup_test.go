@@ -455,3 +455,95 @@ func TestDebugParseCorefile(t *testing.T) {
 
 	debugParseCorefile(t, corefile)
 }
+
+func TestParseBMCTypesDirective(t *testing.T) {
+	tests := []struct {
+		name         string
+		corefile     string
+		wantBMCTypes []string
+		wantErr      bool
+	}{
+		{
+			name: "default BMC types when omitted",
+			corefile: `
+.:1053 {
+    coresmd {
+        smd_url https://smd.cluster.local
+        zone cluster.local {
+            nodes nid{04d}
+        }
+    }
+}`,
+			wantBMCTypes: nil,
+		},
+		{
+			name: "single BMC type",
+			corefile: `
+.:1053 {
+    coresmd {
+        smd_url https://smd.cluster.local
+        zone cluster.local {
+            nodes nid{04d}
+            bmc_types NodeBMC RouterBMC
+        }
+    }
+}`,
+			wantBMCTypes: []string{"NodeBMC", "RouterBMC"},
+		},
+		{
+			name: "all BMC types",
+			corefile: `
+.:1053 {
+    coresmd {
+        smd_url https://smd.cluster.local
+        zone cluster.local {
+            nodes nid{04d}
+            bmc_types NodeBMC RouterBMC ChassisBMC
+        }
+    }
+}`,
+			wantBMCTypes: []string{"NodeBMC", "RouterBMC", "ChassisBMC"},
+		},
+		{
+			name: "bmc_types missing argument",
+			corefile: `
+.:1053 {
+    coresmd {
+        smd_url https://smd.cluster.local
+        zone cluster.local {
+            nodes nid{04d}
+            bmc_types
+        }
+    }
+}`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plugin, err := parseCorefile(t, tt.corefile)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("Expected error, got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Expected no error, got %v", err)
+			}
+			if len(plugin.zones) != 1 {
+				t.Fatalf("Expected 1 zone, got %d", len(plugin.zones))
+			}
+			zone := plugin.zones[0]
+			if len(zone.BMCTypes) != len(tt.wantBMCTypes) {
+				t.Fatalf("Expected BMCTypes %v, got %v", tt.wantBMCTypes, zone.BMCTypes)
+			}
+			for i := range tt.wantBMCTypes {
+				if zone.BMCTypes[i] != tt.wantBMCTypes[i] {
+					t.Errorf("Expected BMCTypes[%d] = %q, got %q", i, tt.wantBMCTypes[i], zone.BMCTypes[i])
+				}
+			}
+		})
+	}
+}
